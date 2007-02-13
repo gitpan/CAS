@@ -1,0 +1,9 @@
+.+\.gz
+.+\.bak
+.+\.bck
+.+\.old
+pm_to_blib
+blib.*
+Makefile$
+CVS
+.*\.SKIP

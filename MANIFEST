@@ -1,0 +1,14 @@
+Changes
+MANIFEST
+META.yml # Will be created by "make dist"
+Makefile.PL
+README
+lib/CAS.pm
+lib/CAS/Config.pm
+lib/CAS/DB.pm
+t/00-load.t
+t/boilerplate.t
+t/pod-coverage.t
+t/pod.t
+MANIFEST.SKIP
+CAS.sql
