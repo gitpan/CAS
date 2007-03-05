@@ -99,7 +99,8 @@ DEBUG: 0	Debug value for this installation
 TIMEOUT: 900	Default session timeout in seconds
 
 # Client 0 is the test client and client 1 is the CAS administration client.
-# here we'll get some info on the initial admin user.
+# here we'll get some info on the initial admin user and client. Most of this
+# is used only during server installation for bootstrapping the settings.
 ADMIN_CLIENT_NAME: CAS Admin
 ADMIN_CLIENT_DOMAIN: localhost
 ADMIN_CLIENT_ID: 1

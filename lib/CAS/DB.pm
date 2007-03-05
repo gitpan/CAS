@@ -227,13 +227,14 @@ sub allowed {
 	
 	my %from_text_mask = (read => 8, modify => 4, create => 2, delete => 1);
 	if ($HR_params->{MASK} && $HR_params->{MASK} =~ /^\d{1,2}$/) {
-		$self->_set_result(CONTINUE, "MASK is a number");
+		$self->_set_result(CONTINUE, "MASK is a number, continuing");
 	} # if MASK
 	elsif ($HR_params->{PERMISSION}
 			&& $from_text_mask{$HR_params->{PERMISSION}}) {
 		
 		$HR_params->{MASK} = $from_text_mask{$HR_params->{PERMISSION}};
-		$self->_set_result(CONTINUE, "MASK translated from PERMISSION");
+		$self->_set_result(CONTINUE, "MASK translated from PERMISSION, "
+			. "continuing");
 	} # if text permission
 	else {
 		$self->_set_result(BAD_REQUEST,
@@ -486,7 +487,7 @@ sub errstr {
 	my $self = shift;
 	$self->error("Not a method call") unless blessed($self);
 	
-	# if response code is ACCEPTED then the last thingthis object did
+	# if response code is ACCEPTED then the last thing this object did
 	# should have been an AUTOLOAD call directly to DBI
 	return $DBI::errstr if $self->response_is(ACCEPTED);
 	
