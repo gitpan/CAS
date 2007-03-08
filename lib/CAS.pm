@@ -8,11 +8,11 @@ CAS - Central Authorization Server
 
 =head1 VERSION
 
-Version 0.87
+Version 0.88
 
 =cut
 
-our $VERSION = '0.87';
+our $VERSION = '0.88';
 
 =head1 SYNOPSIS
 
@@ -484,11 +484,12 @@ sub user {
 		return $self->{_users}{$session};
 	} # if user already stored
 	
-	my $qsession = $self->dbh->quote($session);
-	my $id = $self->dbh->selectrow_array("SELECT User FROM Session
+	my $dbh = $self->dbh;
+	my $qsession = $dbh->quote($session);
+	my $id = $dbh->selectrow_array("SELECT User FROM Session
 		WHERE ID = $qsession");
 	$self->error("Problem getting user ID from $qsession: " .
-		$self->dbh->errstr) if $self->dbh->err;
+		$dbh->errstr) if $dbh->err;
 	
 	# should we be checking for old instances of the same user to delete?
 	

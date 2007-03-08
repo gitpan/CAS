@@ -1,9 +1,0 @@
-.+\.gz
-.+\.bak
-.+\.old
-pm_to_blib
-blib.*
-Makefile$
-CVS
-.*\.SKIP
-CAS.yaml

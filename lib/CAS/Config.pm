@@ -74,14 +74,8 @@ sub load {
 	
 	# see if conf specified in case we're in make test
 	my $conf_file = $HR_params->{CONFIG} || '/etc/CAS.yaml';
+	my $HR_config = _load_config($conf_file);
 	
-	local $/ = undef; # slurpy
-	open(YAML,$conf_file) or die "Couldn't open CAS config file $conf_file: $!";
-	my $yaml_in = <YAML>;
-	close YAML or warn("YAML didn't close preoperly: $!");
-	
-	my $HR_config = Load($yaml_in);
-	$HR_config->{conf_file} = $conf_file;
 	
 	# allow caller to overide default
 	$HR_config->{debug} = $HR_config->{DEBUG}; # user-fetchable from config
@@ -92,15 +86,15 @@ sub load {
 	
 	
 	# connect to db
-	eval { $HR_config->{dbh} = CAS::DB->connectDB({user => $HR_config->{DB_USER},
-		password => $HR_config->{DB_PASSWD}, host => $HR_config->{DB_HOST},
-		debug => $HR_config->{debug}, database => $HR_config->{DB_DATABASE}}) };
-	die "Problem connecting to database: $@" if $@;
-	my $dbh = $HR_config->{dbh};
+	$HR_config->{cas_db_connect} = cas_db_connect($HR_config);
+	my $dbh = &{$HR_config->{cas_db_connect}};
 	warn "dbh = $dbh" if $HR_config->{debug} >= 2;
+	$HR_config->{dbh} = $dbh;
 	
-	# We don't need anyone interogating the config for the password
+	# We don't need anyone interogating the config for the password,
+	# and we're done with it now
 	delete $HR_config->{DB_PASSWD};
+	
 	
 	$HR_config->{client} = $dbh->client_info($HR_params);
 	die 'Problem getting Client data: ' . $dbh->errstr
@@ -108,16 +102,14 @@ sub load {
 	
 	# get user info table fields - will it get used a lot? Should we get the
 	# client tables as well then? Should the field type be a value?
-	foreach my $field (grep($_ ne "ID",
-			@{$dbh->selectcol_arrayref("DESC UserInfo")})) {
+	foreach my $field (@{$dbh->selectcol_arrayref("DESC UserInfo")}) {
 		$HR_config->{user_info_fields}{$field} = 1;
 	} # foreach field in the UserInfo table
 	
 	# if this client has a suplimental user table load that too
 	if (defined $HR_config->{client}{Supplemental_User_Table}) {
-		foreach my $field (grep($_ ne 'User',
-				@{$dbh->selectcol_arrayref("DESC
-				$HR_config->{client}{Supplemental_User_Table}")})) {
+		foreach my $field (@{$dbh->selectcol_arrayref("DESC
+				$HR_config->{client}{Supplemental_User_Table}")}) {
 			$HR_config->{supl_user_info_fields}{$field} = 1;
 		} # foreach feild
 	} # if Supplemental_User_Table
@@ -130,6 +122,39 @@ sub load {
 	
 	return $HR_config;
 } # load
+
+
+sub cas_db_connect {
+	# should also work as $self if called in OOP mode, since this is the core
+	# hashref blessed
+	my $HR_config = shift;
+	my $password = $HR_config->{DB_PASSWD};
+	
+	return sub {
+		my $dbh = '';
+		eval { $dbh = CAS::DB->connectDB({user => $HR_config->{DB_USER},
+			password => $password, host => $HR_config->{DB_HOST},
+			debug => $HR_config->{debug},
+			database => $HR_config->{DB_DATABASE}}) };
+		die "Problem connecting to database: $@" if $@;
+		return $dbh;
+	} # annonymous connection sub
+} # cas_db_connect
+
+
+sub _load_config {
+	my $conf_file = shift || die "conf_file not passed";
+	
+	local $/ = undef; # slurpy
+	open(YAML,$conf_file) or die "Couldn't open CAS config file $conf_file: $!";
+	my $yaml_in = <YAML>;
+	close YAML or warn("YAML didn't close preoperly: $!");
+	
+	my $HR_config = Load($yaml_in);
+	$HR_config->{conf_file} = $conf_file;
+	
+	return $HR_config;
+} # _load_config
 
 =head1 AUTHOR
 

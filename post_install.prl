@@ -1,0 +1,89 @@
+#!/usr/bin/perl
+
+use warnings;
+use strict;
+use YAML;
+use CAS::DB;
+use CAS::User;
+
+my $conf_dir = shift || die 'No configuration target directory specified';
+my $conf_file = shift || die 'No confifuration filename provided';
+my $dest_file = "$conf_dir/$conf_file";
+
+# first copy the current config file to the config directory
+die "No such directory: $conf_dir" unless -d $conf_dir;
+die "You do not have permission to write to $conf_dir" unless -w $conf_dir;
+die "You don't have permission to overwrite existing conf file $dest_file"
+	if -e $dest_file && ! -w $dest_file;
+system("cp $conf_file $dest_file");
+die "system encountered a problem executing cp" if $?;
+
+# OK, now read in the conf file
+local $/ = undef; # slurpy
+open(YAML, $conf_file) or die "Couldn't open CAS config file $conf_file: $!";
+my $yaml_in = <YAML>;
+close YAML or warn("YAML didn't close preoperly: $!");
+my $HR_config = Load($yaml_in);
+
+# OK, now we've read in the config. If the user ran make test
+# first than CAS::DB should be ready to use here.
+my $dbh = '';
+eval { $dbh = CAS::DB->connectDB({user => $HR_config->{DB_USER},
+	password => $HR_config->{DB_PASSWD}, host => $HR_config->{DB_HOST},
+	DEBUG => $HR_config->{DEBUG}, database => $HR_config->{DB_DATABASE}}) };
+die "Problem connecting to database: $@" if $@;
+
+# check to see if client 1 is already defined. If so, let the user know
+# and quit
+my $admin_client = $dbh->selectrow_array("SELECT * FROM Clients
+	WHERE ID = $HR_config->{ADMIN_CLIENT_ID}");
+die "Problem checking if admin client already configured: $DBI::errstr"
+	if $DBI::err;
+
+if ($admin_client) {
+	print 'CAS Admin client already installed, quiting.', "\n";
+	exit;
+} # if already installed
+
+# This should readline in a password with masking
+my $passwd = 'passme';
+
+# now install admin client
+my $q_cname = $dbh->quote($HR_config->{ADMIN_CLIENT_NAME});
+my $q_dom = $dbh->quote($HR_config->{ADMIN_CLIENT_DOMAIN});
+my $q_desc = $dbh->quote($HR_config->{ADMIN_CLIENT_DESCRIPTION});
+my $q_cookie = $dbh->quote($HR_config->{ADMIN_CLIENT_COOKIE});
+$dbh->do("INSERT INTO Clients (ID, Name, Default_Group, Domain,
+	Description, Cookie_Name, Timeout)
+	VALUES ($HR_config->{ADMIN_CLIENT_ID}, $q_cname,
+	$HR_config->{DEFAULT_GROUP}, $q_dom, $q_desc, $q_cookie,
+	$HR_config->{TIMEOUT})");
+die "Problem inserting admin client: $DBI::errstr" if $DBI::err;
+
+# install the admin user, set the default timeout value for clients to whatever
+# is in the config file, and add client 1 to the database.
+# should we be using a CAS::User object here?
+my $user = CAS::User->new({Username => $HR_config->{ADMIN_USERNAME},
+	Password => $passwd, Email => $HR_config->{ADMIN_EMAIL},
+	Firstname => $HR_config->{ADMIN_FIRST_NAME},
+	Lastname => $HR_config->{ADMIN_LAST_NAME},
+	Phone => $HR_config->{ADMIN_PHONE}, GROUP => $HR_config->{DEFAULT_GROUP},
+	CONFIG => $dest_file, CLIENT_ID => $HR_config->{ADMIN_CLIENT_ID}});
+die "Problem creating admin user" unless defined $user;
+
+# set admin user as admin for client
+my $a_id = $user->ID;
+die "No ID for Admin?: " . $user->messages unless defined $a_id;
+$dbh->do("UPDATE Clients SET Admin = $a_id
+	WHERE ID = $HR_config->{ADMIN_CLIENT_ID} LIMIT 1");
+die 'Problem setting admin user as admin for client '
+	. "$HR_config->{ADMIN_CLIENT_ID}: $DBI::errstr" if $DBI::err;
+
+# now grant the admin user access to all the admin tools
+# these assume the default directories - really the setup/install
+# process should allow these to be defined
+# This is still bootstrapping by hand - when the admin module is done this
+# needs to grant permissions through that
+
+print "\nNOTE: Admin user password current set to default of 'passme'. This "
+	. "should be changed immediately!\n\n";

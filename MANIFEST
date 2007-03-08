@@ -1,14 +1,22 @@
+CAS.sql
 Changes
-MANIFEST
-META.yml # Will be created by "make dist"
-Makefile.PL
-README
 lib/CAS.pm
 lib/CAS/Config.pm
 lib/CAS/DB.pm
+lib/CAS/Messaging.pm
+lib/CAS/User.pm
+Makefile.PL
+MANIFEST
+META.yml			# Will be created by "make dist"
+post_install.prl
+README
 t/00-load.t
+t/01-database.t
+t/02-client.t
+t/03-user.t
+t/04-authentication.t
+t/05-authorization.t
+t/06-administration.t
 t/boilerplate.t
 t/pod-coverage.t
 t/pod.t
-MANIFEST.SKIP
-CAS.sql
