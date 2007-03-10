@@ -96,9 +96,15 @@ sub load {
 	delete $HR_config->{DB_PASSWD};
 	
 	
-	$HR_config->{client} = $dbh->client_info($HR_params);
+	my $HR_client = $dbh->client_info($HR_params);
 	die 'Problem getting Client data: ' . $dbh->errstr
-		unless ref $HR_config->{client} eq 'HASH';
+		unless ref $HR_client eq 'HASH';
+	# $HR_config->{client} is now deprecated and will be removed soon
+	$HR_config->{client} = $HR_client;
+	foreach my $field (keys %{$HR_client}) {
+		$HR_config->{lc($field)} = $HR_client->{$field};
+	} # for each bit'o'client data
+	
 	
 	# get user info table fields - will it get used a lot? Should we get the
 	# client tables as well then? Should the field type be a value?

@@ -1,13 +1,12 @@
 CAS.sql
-Changes
 lib/CAS.pm
 lib/CAS/Config.pm
 lib/CAS/DB.pm
 lib/CAS/Messaging.pm
 lib/CAS/User.pm
 Makefile.PL
-MANIFEST
-META.yml			# Will be created by "make dist"
+MANIFEST			This list of files
+META.yml
 post_install.prl
 README
 t/00-load.t

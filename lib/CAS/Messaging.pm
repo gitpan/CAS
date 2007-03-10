@@ -194,17 +194,25 @@ our %code_name_by_val = reverse %codes;
 sub _set_result {
 	my $self = shift;
 	$self->error("Not a method call") unless blessed($self);
+	my $debug = $self->{debug} || 0;
 	
 	my $code = shift || ERROR; # no code == bad ;)
-	$self->error("Unknown code $code") unless $code_name_by_val{$code};
+	$self->error("Unknown result code $code") unless $code_name_by_val{$code};
 	$self->{response_code} = $code;
 	
+	my @call = caller;
 	my $msg = shift;
 	unless ($msg) {
-		$msg = 'No message provided by ' . caller;
+		$msg = 'No message provided by ' . $call[0];
 	} # no message, blame caller
+	
+	if ($debug) {
+		$msg = "($call[0]:" . "[$call[2]]) $msg";
+	} # if debugging make sure we know where from
+	
 	push(@{$self->{messages}}, $msg);
 	
+	# If debugging is at 2 or more, we're generating very noisy output as well
 	$self->gripe("_set_result ($code): $msg") if $self->{debug} >= 2;
 } # _set_result
 
@@ -279,10 +287,28 @@ should be the message generated when the result_code was set.
 =cut
 sub messages {
 	my $self = shift;
+	my $class = blessed($self);
+	$self->error("Not a method call") unless $class;
+	
+	return wantarray ? @{$self->{messages}}
+		: join('; ', $class, @{$self->{messages}});
+} # messages
+
+
+=head2 errstr
+
+Presumes that there was an error, and that the last message generated most
+directly relates to the cause of the error and returns only that message. Be
+warned however that this might always be correct, or enough information.
+Generally the whole message list is prefered.
+
+=cut
+sub errstr {
+	my $self = shift;
 	$self->error("Not a method call") unless blessed($self);
 	
-	return wantarray ? @{$self->{messages}} : join('; ',@{$self->{messages}});
-} # messages
+	return $self->{messages}[-1];
+} # errstr
 
 
 =head2 error

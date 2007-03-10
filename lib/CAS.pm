@@ -8,23 +8,24 @@ CAS - Central Authorization Server
 
 =head1 VERSION
 
-Version 0.88
+Version 0.89
 
 =cut
 
-our $VERSION = '0.88';
+our $VERSION = '0.89';
 
 =head1 SYNOPSIS
 
-CAS is intended to provide cross project (client), cross platform
+CAS is intended to provide cross project (client) and cross platform
 authentication and authorization services. CAS allows a user to have a single
 username and password, which can be granted access to 0 or more different
-clinets. Indeed even fine grained access controls can be granted differently
-for any and all of the different clients that use CAS.
+clients. Even fine grained access controls can be granted differently
+for any and all of the different clients that use CAS. The central object to
+CAS is client based, and can be used to manage multiple users.
     
   use CAS;
 
-  my $client = CAS->new({CLIENT_ID => 2});
+  my $client = CAS->new({CLIENT_ID => $id});
 
 or
 
@@ -32,90 +33,228 @@ or
 
   my $session = $client->authenticate({USERNAME => 'foo',
     PASSWORD => 'foobar'});
-  my $can_do = $client->authorize({USER => $session2,
+  my $can_do = $client->authorize({USER => $session,
     RESOURCE => 'resource1', MASK => 'create'});
 
-Code problems and mis-configurations should cause the call to die. Methods
-should return undef on failure. Error statements are stored in the
-calling objects errstr.
+Code problems and mis-configurations should cause the call to die. Otherwise
+methods return undef on failure. Processing statements are stored in the
+calling objects message stack, which is reset with every method call.
 
- unless (defined $session) { carp $client->errstr }
+ unless (defined $session) { die($client->messages) }
 
 =head1 DESCRIPTION
 
-This system provides a set of tools providing access to a central
-authorization database.
+CAS provides a set of tools for accessing a central user database, allowing
+a single username and password to be used by multiple applications & sites
+(clients). Permissions can be granted however finely or loosely the developer
+finds useful. The system also stores some very basic session information,
+providing some very minimal usage auditing. A separate distribution,
+CAS-Apache2, provides a mod_perl 2 application for protecting web sites from
+CAS.
 
-You first must create a basic CAS client object.
+
+=head2 USAGE OVERVIEW
+
+You first must create a CAS client object. Clients are defined in the database
+in advance by the CAS administrator. You will need to know the client ID, name
+or domain, all of which need to be unique to each client.
+
+Examples:
+
   my $client = CAS->new({CLIENT_ID => 2});
 
 or
 
   my $client = CAS->new({CLIENT_NAME => 'Project Foo'});
 
-You can fetch information about the client from this object. But its main
-purpose is to authenticate users. As the users can be granted access to any
-client, the specific client used to create this object doesn't matter if you
-just want to confirm the user.
+You can fetch information about the client from this object if needed. But its
+main purpose is to authenticate users and check their authorizations. As the
+users can be granted access to any client, the specific client used to create
+this object doesn't matter if you just want to authenticate the user.
 
   my $session = $client->authenticate({});
 
-The session token can be used to create a user object, which remembers the
-client under which it was created. This user object can be used to fetch
-information about the user and check if the user authorizations under that
-client. Sessions are tracked, and the session token can be returned to the
-caller for later invocations. Security of the token and its use is left to
-the discretion of the caller.
+The session token is a unique identifier for the particular session. It can be
+returned to the application as a key for session tracking, allowing for
+persistent login sessions and such. It is also used to identify the user when
+checking authorization.
 
-=head2 ERROR HANDLING
+  my $is_authorized = $client->authorize({SESSION => $session,
+    RESOURCE => $request, MASK => 8});
 
-Methods should return undef on failure. Error statements are stored in the
-calling objects errstr.
 
- unless (defined $session) { carp $client->errstr }
+The session token can also be used to fetch a user object, which remembers the
+client under which it was created.
 
-Most methods will also set a RESPONSE_CODE:
-	500	ERROR
-	000	OK
-	401	AUTH_REQUIRED
-	403	FORBIDDEN
+  my $user = $client->user($session);
 
-These values are drawn from Apache's response codes, since this system is
-intended to be generally accessed via an Apache server. While error text
-will be stored in B<errstr>, the RESPONSE_CODE can be checked to see the
-reason for failure.
-  if ($user->{RESPONSE_CODE} == ERROR) {
-    "Problem handling request: $user->errstr";
-  }
-  elsif ($user->{RESPONSE_CODE} == FORBIDDEN) {
-    "User not authorized: $user->errstr";
-  }
-  elsif ($user->{RESPONSE_CODE} == OK) { do_something() }
+This user object, L<CAS::User>, can be used to get information about the
+user. Security of the session token and its use is left to the discretion of
+the caller.
 
-=head2 INTENT
+=head2 CLIENT OBJECT ATTRIBUTES
 
-Initially I just want this to work on the same server using mod_perl
-handlers. Fairly generic auth handlers and a login
-handler are provided in the CAS::Apache bundle.
+=over 4
 
-The next phase would be to provide special mod_perl request handlers for remote
-authentication and authorization requests. The response code in the header will
-indicate if the user is authorized or not, or if they are allowed to view a
-given resource
-or not. Handlers would return XML or YAML containing the requested information,
-the users ID, the session token and perhaps some digest key to verify the
-response. I'd also like to configure the system so that any requests not comming
-through SSL are refused.
+=item user_info_fields
 
-On the back end the CAS server requires a set of tables in a relational
-database. Since
-this system is intended as a single point of maintenance of user data we can
-control the schema. It would be nice if this could work with an LDAP server as
-well as a MySQL (or other DBI supported relational database), or at least
-be able to be configured to sync changes with an external system like LDAP so
-that admins could have that information on a user (such as username, password,
-full name, maybe UID etc) which is used elsewhere for system logins and such is
-automatically synced.
+Returns a hash reference containing the field names in the UserInfo table.
+  
+=item supl_user_info_fields
+
+Returns a hash reference containing the field names in
+the clients supplemental_user_table, if defined.
+  
+=item supplemental_user_table
+
+The name of the clients supplemental user table.
+  
+=item admin_email
+
+The email address for the user designated as the administrator of the client.
+
+=item debug
+
+The debug level for the client object. The default level is determined by the
+CAS configuration file. This is the only CAS client object attribute which can
+be set.
+
+  $client->debug(2);
+
+=item id
+
+The ID of the client.
+
+=item name
+
+The name of the client.
+
+=item default_group
+
+The default group assigned to new users registering through the client.
+
+=item domain
+
+The domain of the client. This can be used to allow a local interface to
+determine what client to assign based on the IP or such of a remote connection.
+
+=item base_path
+
+The base path for this clients application(s) or work space. Primarilly used
+for websites where the project area defined for the client is a subsection of
+a website.
+
+=item description
+
+A description of the client.
+
+=item cookie_name
+
+Primarilly used by CAS-Apache2 for determining the name of the cookie in whcih
+to store or fetch the session token.
+
+=item timeout
+
+The period of incativitiy after which a user is forced to re-authenticate.
+
+=back
+
+=head2 MESSAGING
+
+All methods produce some internal messages while processing. When a method is
+first invoked on a CAS object, any old messages are cleared out and its initial
+result code is set to ERROR (so that if anything unexpected happens it has the
+result we would want - ERROR).
+
+There are a wide variety of possible result codes that a method could use.
+L<CAS::Messaging> The specific ones that a method might set are described in
+the methods specific documentation. However there are three that are the most
+common, ERROR, BAD_REQUEST and OK which we will use in the following examples.
+The status is set to ERROR both when a method first starts and on non-fatal but
+still critical problems. BAD_REQUEST is generally set when a method call was
+properly constructed, but required parameters were missing or in an invalid
+format. OK is usually the status set after it has completed its job
+sucsesfully, just before returning.
+
+=head3 Messaging methods
+
+=over 4
+
+=item response_is
+
+Used to check the status set by the last method called on the object:
+
+  $client->response_is('STATUS_NAME');
+
+=item response_code
+
+Returns the status set by the last method called on the object (as text):
+
+  my $status = $client->response_code;
+
+=item messages
+
+Returns all the messages generated by the last method called on the object. If
+called in list context returns a list of the messages. If called in scalar
+context returns a string, starting with the class name of the object, followed
+by all the messages generated joined on "; ".
+
+  my $messages = $client->messages;
+
+=back
+
+Be sure to see L<CAS::Messaging> for more details.
+
+=head3 Example
+
+Calling authentication with the USERNAME missing:
+
+  %args = get_user_credentials();
+  my $session = $client->authenticate(\%args);
+  unless (defined $session) {
+    if ($client->response_is('BAD_REQUEST')) {
+      warn "Can't authenticate - missing required arguments: "
+        . $client->messages;
+      # try get_user_credentials again?
+    } # if bad request
+    else {
+      my $status = $client->response_code;
+      die "Problem with authentication - Status: $status, Messages: " . 
+        . $client->messages;
+    } # something else went wrong?
+  } # unless session token returned
+
+
+=head2 FUTURE PLANS
+
+Here is the BIG wish list for CAS. For more humble feature requests, see
+L<http://rt.cpan.org/NoAuth/Bugs.html?Dist=CAS>
+
+
+=over 4
+
+=item XML/YAML/SOAP/JSON
+
+I'd like to have optional handlers for accepting and replying to requests
+through one or more data exchange formats. Most likely I'll do this not through
+this core distribution, but through special mod_perl handlers under the
+L<CASS::Apache> distribution. This will be the way through which not only
+remote applications access CAS from a different system (other than browsers
+accessing local pages), but also how any other languages could potentially
+use CAS authentication and authorization from a central database.
+
+=item LDAP & Kerberos
+
+It would be great to have optional plugins or such that extend CAS to work
+seemlessly along side both LDAP and Kerberos. An earlier incarnation of this
+system actually did interact with Kerberos. If a user regestered with their
+kerberos username and password, CAS verified authentication from then on
+against Kerberos. It even fetched some user info from the Kerberos server
+using ph. The schema still has fields for indicating if a user record relates
+to a kerberos or ldap system, but there is no functionality at this time for
+such.
+
+=back
 
 =cut
 
@@ -143,6 +282,15 @@ my %fields = (
 	supl_user_info_fields   => 1,
 	admin_email             => 1,
 	debug                   => 3,
+	id                      => 1,
+	name                    => 1,
+	supplemental_user_table => 1,
+	default_group           => 1,
+	domain                  => 1,
+	base_path               => 1,
+	description             => 1,
+	cookie_name             => 1,
+	timeout                 => 1,
 );
 
 
@@ -538,6 +686,36 @@ sub AUTOLOAD {
 } # AUTOLOAD
 
 
+=head1 INSTALLING
+
+There are a few steps you will need to handle before you can proceed to the
+usual CPAN distribution make, make test, make install magic. Primarilly, you
+need to create the CAS database before any tests beyond syntax checking will
+pass.
+
+% tar -xzf CAS-x.xx.tar.gz
+% cd CAS-x.xx
+% pwd
+/path/to/CAS-x.xx
+% mysql -u root -p
+password:
+mysql> CREATE DATABASE CAS;
+mysql> USE CAS;
+mysql> source /path/to/CAS-x.xx/CAS.sql
+mysql> GRANT ALL ON CAS.* TO CAS_query IDENTIFIED BY 'local_passwd'
+mysql> GRANT ALL ON CAS.* TO CAS_query@localhost IDENTIFIED BY 'local_passwd'
+mysql> exit
+% perl Makefile.PL
+% make
+% make test
+% make install
+
+When running Makefile.PL for the first time you will be asked a bunch of
+questions. Answer them appropriately for your system. The DB_* items all
+relate to the information you provided mysql when setting up the database. If
+at any time you want to regenerate the configuration file, just delete it and
+rerun Makefile.PL.
+
 =head1 AUTHOR
 
 Sean P. Quinlan, C<< <gilant at gmail.com> >>
@@ -612,6 +790,90 @@ Ported to stub distribution generated by module-starter. Split Apache and
 core CAS functionality into two dists. Started removing krb5 support from core
 modules. If I continue to support it, it will be as an optional extension.
 
+=item 0.40
+
+Entered heavy development - many change entries were not made. Guessing from
+here to version .89
+
+=item 0.41
+
+Finished post-port cleanup. Added some very simple tests.
+
+=item 0.42
+
+Split out Messaging.pm and did a little more cleanup on CAS.pm
+
+=item 0.43
+
+Reworked parts of Messaging.pm, updated everything to use messaging.
+
+=item 0.44
+
+Did some code cleanup on Users.pm, improved AUTOLOADS, adding %allowed with
+bitmasks. Added a few more tests, most of which fail.
+
+=item 0.50
+
+Started working on API and getting tests to pass. Small
+adjustments to schema.
+
+=item 0.52
+
+Debugging. Tests passing.
+
+=item 0.60
+
+Completely changed object relations, making the CAS object all about the
+client and adding user caching. User.pm is no longer a subclass of CAS and
+authentication happens through the client object.
+
+=item 0.61
+
+Updated tests and made some changes to API based on working out tests.
+
+=item 0.80
+
+Wrote a slew more tests, got all the client and user tests passing.
+
+=item 0.81
+
+Added generation of CAS.yaml to Makefile.PL and wrote post_install.prl.
+
+=item 0.82
+
+Refined CAS.yaml generation some and tripled the number of tests.
+
+=item 0.83
+
+Got auth tests passing!
+
+=item 0.86
+
+All basic tests pass for existing funtionality. Can add, load, edit &
+disable users. Client object can handle multiple users, caching user
+objects by session token and authenticate and authorize against
+permissions in database.
+
+=item 0.87
+
+Improved some error statements. Updated MANIFEST so the new modules were
+included in the distribution. (d'oh!) Allowed caller to supply ID to
+User->new to support installs where there is already a database of users
+(or employees) where use of pre-existing IDs is important.
+
+=item 0.88
+
+Broke up Config.pm, mainly to separate database connection from load and to
+use a database connection routine that captured the db password in a closure.
+This was required to support CAS-Apache2, where storing the database
+connection in the global client object caused 'Command out of sync' errors
+on some otherwise valid setups.
+
+=item 0.89
+
+Updated the documentation. Made the fields in the clients table attributes of
+the client object. Added some info on the caller to messages when debuging.
+
 =back
 
 
@@ -621,9 +883,14 @@ You can find documentation for this module with the perldoc command.
 
     perldoc CAS
 
+On most Unix systems you can probably also find the documentation under the
+man pages.
+
+shell> man CAS
 
 Please join the CAS mailing list and suggest a final release name for
 the package.
+
 http://mail.grendels-den.org/mailman/listinfo/CAS_grendels-den.org
 
 You can also look for information at:
@@ -637,16 +904,18 @@ L<http://annocpan.org/dist/CAS>
 =item * CPAN Ratings
 
 L<http://cpanratings.perl.org/d/CAS>
-
-=item * RT: CPAN's request tracker
-
-L<http://rt.cpan.org/NoAuth/Bugs.html?Dist=CAS>
-
 =item * Search CPAN
 
 L<http://search.cpan.org/dist/CAS>
 
 =back
+
+=head2 BUGS
+
+For bugs, bug reporting and feature requests, see CPAN's request tracker
+
+L<http://rt.cpan.org/NoAuth/Bugs.html?Dist=CAS>
+
 
 =head1 ACKNOWLEDGEMENTS
 
@@ -657,7 +926,7 @@ for banging on the project code.
 
 =head1 COPYRIGHT & LICENSE
 
-Copyright 2004-2006 Sean P. Quinlan, all rights reserved.
+Copyright 2004-2007 Sean P. Quinlan, all rights reserved.
 
 This program is free software; you can redistribute it and/or modify it
 under the same terms as Perl itself.
